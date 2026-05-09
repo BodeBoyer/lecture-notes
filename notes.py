@@ -121,7 +121,7 @@ def _parse_device_flag(args):
 
 def _resolve_device(args):
     """Return (device_idx, device_name, mode_label) based on flags."""
-    from recorder import setup_virtual_recording, setup_inperson_recording, list_input_devices
+    from recorder import setup_virtual_recording, setup_inperson_recording
 
     device_override, args = _parse_device_flag(args)
     flags = {a for a in args if a.startswith("--")}
@@ -132,6 +132,8 @@ def _resolve_device(args):
         return device_idx, device_name, "virtual"
 
     if device_override is not None:
+        from recorder import list_input_devices
+
         devices = dict(list_input_devices())
         device_name = devices.get(device_override, f"Device {device_override}")
         return device_override, device_name, "inperson"
