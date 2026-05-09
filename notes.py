@@ -267,6 +267,60 @@ def cmd_process(args):
     run_pipeline(audio_file, course, source_label=audio_file)
 
 
+def cmd_list_notes(_args):
+    """list-notes — print all saved notes files, newest first."""
+    files = sorted(NOTES_DIR.glob("*/*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not files:
+        print("No notes found.")
+        return
+    for i, f in enumerate(files):
+        course = f.parent.name
+        print(f"{i}: {course} — {f.stem} ({f})")
+
+
+def cmd_summarize(args):
+    """summarize [<notes_file>] — casual conversational summary of a recording."""
+    from summarizer import generate_casual_summary
+    import re
+
+    if args and not args[0].startswith("--"):
+        # Explicit file path or index from list-notes
+        target = args[0]
+        if target.isdigit():
+            files = sorted(NOTES_DIR.glob("*/*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            idx = int(target)
+            if idx >= len(files):
+                print(f"No notes file at index {idx}. Run list-notes to see options.")
+                sys.exit(1)
+            notes_file = files[idx]
+        else:
+            notes_file = Path(target)
+    else:
+        # Default: most recent notes file
+        files = sorted(NOTES_DIR.glob("*/*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not files:
+            print("No notes found. Record something first.")
+            sys.exit(1)
+        notes_file = files[0]
+
+    if not notes_file.exists():
+        print(f"File not found: {notes_file}")
+        sys.exit(1)
+
+    content = notes_file.read_text(encoding="utf-8")
+    if "## Raw Transcript" not in content:
+        print("No transcript found in this notes file.")
+        sys.exit(1)
+
+    raw = content.split("## Raw Transcript")[1].strip()
+    transcript = re.sub(r'\[\d+:\d+:\d+\.\d+ - \d+:\d+:\d+\.\d+\] ', '', raw).strip()
+    context = f"Recording: {notes_file.parent.name} / {notes_file.stem}"
+
+    print(f"Summarizing: {notes_file}\n")
+    summary = generate_casual_summary(transcript, context)
+    print(summary)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -283,6 +337,10 @@ def main():
 
     if command == "list-devices":
         cmd_list_devices(rest)
+    elif command == "list-notes":
+        cmd_list_notes(rest)
+    elif command == "summarize":
+        cmd_summarize(rest)
     elif command == "record-start":
         cmd_record_start(rest)
     elif command == "record-stop":
