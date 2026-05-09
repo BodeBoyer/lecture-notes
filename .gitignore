@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+notes/
+*.wav
+*.aiff
+*.aif
+*.mp3
+*.m4a
+*.flac
+.DS_Store

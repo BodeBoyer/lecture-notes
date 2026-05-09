@@ -1,0 +1,6 @@
+mlx-whisper
+anthropic
+python-dotenv
+soundfile
+sounddevice
+numpy
