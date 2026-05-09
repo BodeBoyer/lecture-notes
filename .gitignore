@@ -11,3 +11,4 @@ notes/
 *.m4a
 *.flac
 .DS_Store
+.venv-mcp/
