@@ -101,19 +101,50 @@ def run_pipeline(audio_file: str, course: str, source_label: str):
     print(notes)
 
 
+def _parse_device_flag(args):
+    """Extract --device <idx> value from args, return (int or None, remaining_args)."""
+    result = None
+    cleaned = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--device" and i + 1 < len(args):
+            try:
+                result = int(args[i + 1])
+            except ValueError:
+                pass
+            i += 2
+        else:
+            cleaned.append(args[i])
+            i += 1
+    return result, cleaned
+
+
 def _resolve_device(args):
     """Return (device_idx, device_name, mode_label) based on flags."""
-    from recorder import setup_virtual_recording, setup_inperson_recording
+    from recorder import setup_virtual_recording, setup_inperson_recording, list_input_devices
 
+    device_override, args = _parse_device_flag(args)
     flags = {a for a in args if a.startswith("--")}
     virtual = "--virtual" in flags
 
     if virtual:
         device_idx, device_name = setup_virtual_recording()
         return device_idx, device_name, "virtual"
-    else:
-        device_idx, device_name = setup_inperson_recording()
-        return device_idx, device_name, "inperson"
+
+    if device_override is not None:
+        devices = dict(list_input_devices())
+        device_name = devices.get(device_override, f"Device {device_override}")
+        return device_override, device_name, "inperson"
+
+    device_idx, device_name = setup_inperson_recording()
+    return device_idx, device_name, "inperson"
+
+
+def cmd_list_devices(_args):
+    """list-devices — print numbered input devices for the skill to present."""
+    from recorder import list_input_devices
+    for idx, name in list_input_devices():
+        print(f"{idx}: {name}")
 
 
 def cmd_record_start(args):
@@ -250,7 +281,9 @@ def main():
     command = sys.argv[1]
     rest = sys.argv[2:]
 
-    if command == "record-start":
+    if command == "list-devices":
+        cmd_list_devices(rest)
+    elif command == "record-start":
         cmd_record_start(rest)
     elif command == "record-stop":
         cmd_record_stop(rest)
