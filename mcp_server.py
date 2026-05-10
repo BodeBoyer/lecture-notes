@@ -79,6 +79,27 @@ def stop_recording() -> str:
 
 
 @mcp.tool()
+def process_video(source: str, course: str, browser_cookies: str = "") -> str:
+    """
+    Generate notes from a pre-recorded lecture. Same pipeline and output format as a
+    live recording — just for content that already exists.
+
+    Args:
+        source: Local path to an audio/video file (e.g. /Users/me/Downloads/lecture.mp4)
+                OR a URL — YouTube, Panopto, Zoom share link, or any site yt-dlp supports.
+        course: Course or meeting name (e.g. "COMP 210").
+        browser_cookies: Optional. For SSO-protected sources like Panopto, set to
+                         "chrome", "firefox", "safari", or "edge" to use that browser's
+                         saved cookies. Leave empty for YouTube and other public sources.
+    """
+    args = ["process", source, course]
+    if browser_cookies:
+        args += ["--browser-cookies", browser_cookies]
+    # Long lectures: download + Whisper-large-v3 + Claude can take 20+ minutes
+    return _run(*args, timeout=1800)
+
+
+@mcp.tool()
 def summarize_recording(index: int = 0) -> str:
     """
     Generate a conversational summary of a saved recording.

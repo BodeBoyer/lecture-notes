@@ -4,3 +4,4 @@ python-dotenv
 soundfile
 sounddevice
 numpy
+yt-dlp

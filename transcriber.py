@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".aiff", ".aif"}
 
-# Small = fast + good quality for clear speech like lectures.
-# Swap to "mlx-community/whisper-medium-mlx" if accuracy is lacking.
-WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
+# Large-v3 prioritizes accuracy over speed — better on technical terms, proper nouns,
+# and long-form lectures. Swap to "mlx-community/whisper-large-v3-turbo" if speed matters more.
+WHISPER_MODEL = "mlx-community/whisper-large-v3-mlx"
 
 
 @dataclass(frozen=True)

@@ -14,8 +14,10 @@ Commands:
     record <course> [--virtual | --mic]
         Record interactively (press Enter to stop). For use in a normal terminal.
 
-    process <file> <course>
-        Generate notes from an existing audio or video file.
+    process <file_or_url> <course> [--browser-cookies chrome|firefox|safari|edge]
+        Generate notes from a pre-recorded lecture. Accepts a local audio/video file
+        OR a URL (YouTube, Panopto, Zoom share link, etc. — anything yt-dlp supports).
+        Use --browser-cookies for SSO-protected sources like Panopto.
 
 Examples:
     python notes.py record-start "COMP 210"
@@ -23,6 +25,8 @@ Examples:
     python notes.py record-stop
 
     python notes.py process lecture.m4a "COMP 210"
+    python notes.py process https://www.youtube.com/watch?v=XXXX "COMP 210"
+    python notes.py process https://uncch.hosted.panopto.com/... "COMP 210" --browser-cookies chrome
 """
 
 import json
@@ -259,14 +263,92 @@ def cmd_record(args):
         os.unlink(tmp_path)
 
 
+def _is_url(s: str) -> bool:
+    return s.lower().startswith(("http://", "https://"))
+
+
+def _download_video(url: str, dest_dir: Path, browser_cookies: str = "") -> Path:
+    """Download a video/audio from URL using yt-dlp. Returns path to downloaded file."""
+    try:
+        import yt_dlp
+    except ImportError:
+        raise RuntimeError(
+            "yt-dlp is not installed. Run: "
+            f"{HERE / '.venv' / 'bin' / 'pip'} install yt-dlp"
+        )
+
+    print(f"Downloading from {url}...")
+    # Prefer audio formats the transcriber's audio path can handle without ffmpeg
+    # (m4a/mp3/aac → afconvert). Fall back to anything yt-dlp finds.
+    ydl_opts = {
+        "outtmpl": str(dest_dir / "%(id)s.%(ext)s"),
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=aac]/bestaudio/best",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    }
+    if browser_cookies:
+        ydl_opts["cookiesfrombrowser"] = (browser_cookies,)
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+
+    requested = info.get("requested_downloads") or []
+    if requested and requested[0].get("filepath"):
+        path = Path(requested[0]["filepath"])
+        if path.exists():
+            return path
+
+    files = [f for f in dest_dir.iterdir() if f.is_file()]
+    if not files:
+        raise RuntimeError("yt-dlp downloaded nothing")
+    return files[0]
+
+
+def _parse_browser_cookies_flag(args):
+    """Extract --browser-cookies <browser> value, return (value, remaining_args)."""
+    result = ""
+    cleaned = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--browser-cookies" and i + 1 < len(args):
+            result = args[i + 1]
+            i += 2
+        else:
+            cleaned.append(args[i])
+            i += 1
+    return result, cleaned
+
+
 def cmd_process(args):
-    """process <file> <course>"""
+    """process <file_or_url> <course> [--browser-cookies <browser>]"""
+    browser_cookies, args = _parse_browser_cookies_flag(args)
+
     if len(args) < 2:
-        print("Usage: python notes.py process <file> <course>")
+        print("Usage: python notes.py process <file_or_url> <course> [--browser-cookies chrome|firefox|safari|edge]")
         sys.exit(1)
-    audio_file, course = args[0], args[1]
-    print(f"Processing: {audio_file}")
-    run_pipeline(audio_file, course, source_label=audio_file)
+
+    source, course = args[0], args[1]
+
+    if _is_url(source):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            try:
+                downloaded = _download_video(source, Path(tmp_dir), browser_cookies)
+            except Exception as exc:
+                print(f"Download failed: {exc}")
+                if not browser_cookies and ("panopto" in source.lower() or "login" in str(exc).lower() or "403" in str(exc)):
+                    print("\nHint: SSO-protected sources (e.g., Panopto) need browser cookies.")
+                    print("Re-run with: --browser-cookies chrome  (or firefox / safari / edge)")
+                sys.exit(1)
+            print(f"Downloaded: {downloaded.name}")
+            run_pipeline(str(downloaded), course, source_label=downloaded.name)
+        return
+
+    if not Path(source).exists():
+        print(f"File not found: {source}")
+        sys.exit(1)
+    print(f"Processing: {source}")
+    run_pipeline(source, course, source_label=source)
 
 
 def cmd_list_notes(_args):
