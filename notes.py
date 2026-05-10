@@ -42,6 +42,7 @@ HERE = Path(__file__).parent
 NOTES_DIR = HERE / "notes"
 STATE_FILE = Path.home() / ".lecture-notes-state.json"
 STOP_FILE = Path.home() / ".lecture-notes-stop"
+TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
 def load_env():
@@ -56,6 +57,31 @@ def load_env():
                 os.environ.setdefault(key.strip(), val.strip())
 
 
+def _env_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in TRUE_VALUES
+
+
+def _canonical_course(course: str) -> str:
+    return course.strip().replace(" ", "-").replace("/", "-").upper()
+
+
+def _positional_args(args):
+    """Return positional args, skipping known option values."""
+    positionals = []
+    skip_next = False
+    options_with_values = {"--device", "--browser-cookies"}
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in options_with_values:
+            skip_next = True
+            continue
+        if not arg.startswith("--"):
+            positionals.append(arg)
+    return positionals
+
+
 def _export_transcript_text(transcript: Any) -> str:
     if hasattr(transcript, "export_text"):
         return transcript.export_text()
@@ -63,7 +89,7 @@ def _export_transcript_text(transcript: Any) -> str:
 
 
 def save_notes(course: str, notes: str, transcript: Any, source_filename: str) -> Path:
-    safe_course = course.replace(" ", "-").replace("/", "-").upper()
+    safe_course = _canonical_course(course)
     course_dir = NOTES_DIR / safe_course
     course_dir.mkdir(parents=True, exist_ok=True)
 
@@ -85,6 +111,59 @@ def save_notes(course: str, notes: str, transcript: Any, source_filename: str) -
     return out_path
 
 
+def _maybe_push_to_drive(out_path: Path, course: str) -> None:
+    """Upload notes to Google Drive if LECTURE_NOTES_DRIVE_PUSH=1.
+
+    Best-effort: any failure is reported as a warning, never raised. The
+    local notes file is the source of truth.
+    """
+    if not _env_enabled("LECTURE_NOTES_DRIVE_PUSH"):
+        return
+
+    try:
+        from drive_uploader import upload_note
+    except ImportError as exc:
+        print(f"Drive push skipped: missing deps ({exc}). "
+              f"Run: {HERE / '.venv' / 'bin' / 'pip'} install -r {HERE / 'requirements.txt'}")
+        return
+
+    try:
+        result = upload_note(out_path, course)
+        link = result.get("web_link") or f"file id {result.get('file_id')}"
+        print(f"Drive: uploaded to {link}")
+    except Exception as exc:
+        print(f"Drive push failed (notes still saved locally): {exc}")
+
+
+def _maybe_push_to_notebooklm(out_path: Path, course: str) -> None:
+    """Upload notes directly to a NotebookLM notebook if LECTURE_NOTES_NBLM_PUSH=1.
+
+    Experimental — uses the unofficial notebooklm-py browser-automation
+    wrapper. Best-effort: any failure warns and never raises. The Drive
+    upload (Phase 1) remains the reliable path.
+    """
+    if not _env_enabled("LECTURE_NOTES_NBLM_PUSH"):
+        return
+
+    try:
+        from notebooklm_pusher import push_to_notebook
+    except ImportError as exc:
+        print(f"NotebookLM push skipped: missing deps ({exc}). "
+              f"Run: {HERE / '.venv' / 'bin' / 'pip'} install -r {HERE / 'requirements-nblm.txt'} "
+              f"&& {HERE / '.venv' / 'bin' / 'playwright'} install chromium")
+        return
+
+    try:
+        result = push_to_notebook(out_path, course)
+        if "skipped" in result:
+            print(f"NotebookLM push skipped: {result['skipped']}")
+            return
+        print(f"NotebookLM: added source {result.get('title')} "
+              f"(notebook {result.get('notebook_id')})")
+    except Exception as exc:
+        print(f"NotebookLM push failed (notes still saved locally): {exc}")
+
+
 def run_pipeline(audio_file: str, course: str, source_label: str):
     from transcriber import transcribe
     from summarizer import generate_notes
@@ -101,6 +180,8 @@ def run_pipeline(audio_file: str, course: str, source_label: str):
     out_path = save_notes(course, notes, transcript, source_label)
 
     print(f"\nNotes saved to: {out_path}")
+    _maybe_push_to_drive(out_path, course)
+    _maybe_push_to_notebooklm(out_path, course)
     print("\n" + "=" * 60)
     print(notes)
 
@@ -155,7 +236,7 @@ def cmd_list_devices(_args):
 
 def cmd_record_start(args):
     """record-start <course> [--virtual | --mic]"""
-    positional = [a for a in args if not a.startswith("--")]
+    positional = _positional_args(args)
 
     if not positional:
         print("Usage: python notes.py record-start <course> [--virtual | --mic]")
@@ -247,7 +328,7 @@ def cmd_record(args):
     """record <course> [--virtual | --mic] — interactive, press Enter to stop."""
     from recorder import record
 
-    positional = [a for a in args if not a.startswith("--")]
+    positional = _positional_args(args)
     if not positional:
         print("Usage: python notes.py record <course> [--virtual | --mic]")
         sys.exit(1)
@@ -412,12 +493,13 @@ def main():
 
     load_env()
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY not set. Add it to lecture-notes/.env")
-        sys.exit(1)
-
     command = sys.argv[1]
     rest = sys.argv[2:]
+    uses_anthropic = command in {"record-stop", "record", "process", "summarize"} or Path(command).exists()
+
+    if uses_anthropic and not os.environ.get("ANTHROPIC_API_KEY"):
+        print("Error: ANTHROPIC_API_KEY not set. Add it to lecture-notes/.env")
+        sys.exit(1)
 
     if command == "list-devices":
         cmd_list_devices(rest)

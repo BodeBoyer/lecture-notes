@@ -12,3 +12,4 @@ notes/
 *.flac
 .DS_Store
 .venv-mcp/
+credentials/

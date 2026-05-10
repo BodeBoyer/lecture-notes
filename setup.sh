@@ -7,7 +7,7 @@ cd "$SCRIPT_DIR"
 echo "Creating virtual environment..."
 python3 -m venv .venv
 
-echo "Installing dependencies (mlx-whisper will download ~150MB model on first run)..."
+echo "Installing dependencies (mlx-whisper will download the selected Whisper model on first transcription)..."
 .venv/bin/pip install --upgrade pip -q
 .venv/bin/pip install -r requirements.txt -q
 
@@ -20,6 +20,6 @@ fi
 
 echo ""
 echo "Setup complete. Usage:"
-echo "  $SCRIPT_DIR/.venv/bin/python $SCRIPT_DIR/notes.py <recording.m4a> \"COURSE NAME\""
+echo "  $SCRIPT_DIR/.venv/bin/python $SCRIPT_DIR/notes.py process <recording.m4a> \"COURSE NAME\""
 echo ""
 echo "For video files (mp4, mov, etc), also run: brew install ffmpeg"

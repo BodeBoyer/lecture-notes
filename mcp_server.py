@@ -14,17 +14,34 @@ NOTES = os.path.join(HERE, "notes.py")
 mcp = FastMCP("lecture-notes")
 
 
+def _output_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return str(value)
+
+
 def _run(*args, timeout=20) -> str:
     """Run a notes.py subcommand with stdin closed so it never blocks on input."""
-    result = subprocess.run(
-        [PYTHON, NOTES, *args],
-        capture_output=True,
-        text=True,
-        cwd=HERE,
-        stdin=subprocess.DEVNULL,
-        timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            [PYTHON, NOTES, *args],
+            capture_output=True,
+            text=True,
+            cwd=HERE,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = (_output_text(exc.stdout) + _output_text(exc.stderr)).strip()
+        detail = f"\n\nPartial output:\n{output}" if output else ""
+        return f"Command timed out after {timeout}s: notes.py {' '.join(args)}{detail}"
+
     output = (result.stdout + result.stderr).strip()
+    if result.returncode != 0:
+        detail = output if output else "(no output)"
+        return f"Command failed with exit code {result.returncode}: notes.py {' '.join(args)}\n\n{detail}"
     return output if output else "(no output)"
 
 

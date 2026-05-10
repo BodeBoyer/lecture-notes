@@ -63,6 +63,40 @@ class NotesCliTests(unittest.TestCase):
         self.assertIn("## Raw Transcript", written)
         self.assertIn("[00:00:00.000 - 00:00:01.000] mock transcript", written)
 
+    def test_save_notes_canonicalizes_course_with_outer_whitespace(self):
+        transcript = Transcript(text="words", segments=[])
+
+        out_path = notes.save_notes(" comp 210 ", "# Notes", transcript, "lecture.wav")
+
+        self.assertEqual(out_path.parent.name, "COMP-210")
+
+    def test_drive_push_flag_is_case_insensitive(self):
+        fake_upload = mock.Mock(return_value={"web_link": "https://drive.example/file"})
+        fake_module = types.SimpleNamespace(upload_note=fake_upload)
+
+        with mock.patch.dict(os.environ, {"LECTURE_NOTES_DRIVE_PUSH": "YES"}), mock.patch.dict(
+            sys.modules, {"drive_uploader": fake_module}
+        ):
+            notes._maybe_push_to_drive(self.root / "note.md", "COMP 210")
+
+        fake_upload.assert_called_once_with(self.root / "note.md", "COMP 210")
+
+    def test_main_list_devices_does_not_require_anthropic_key(self):
+        with mock.patch("sys.argv", ["notes.py", "list-devices"]), mock.patch.object(
+            notes, "load_env"
+        ), mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(notes, "cmd_list_devices") as list_devices:
+            notes.main()
+
+        list_devices.assert_called_once_with([])
+
+    def test_main_process_requires_anthropic_key(self):
+        with mock.patch("sys.argv", ["notes.py", "process", "lecture.wav", "COMP 210"]), mock.patch.object(
+            notes, "load_env"
+        ), mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(SystemExit) as raised:
+            notes.main()
+
+        self.assertEqual(raised.exception.code, 1)
+
     def test_record_start_creates_state_and_launches_daemon(self):
         fake_proc = types.SimpleNamespace(pid=4242)
         with mock.patch.object(notes, "_resolve_device", return_value=(7, "USB Mic", "inperson")) as resolve, mock.patch(
